@@ -21,11 +21,15 @@ spec:
   template:
     metadata:
       labels: { app: backend }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: /metrics
     spec:
       terminationGracePeriodSeconds: 20
       containers:
         - name: backend
-          image: lifeboard-backend:0.3.0
+          image: lifeboard-backend:0.4.0
           imagePullPolicy: Never
           ports:
             - name: http

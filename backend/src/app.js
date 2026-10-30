@@ -1,5 +1,6 @@
 import express from 'express';
 import { log } from './log.js';
+import { createMetrics } from './metrics.js';
 
 // Ошибки Postgres, которые означают некорректный запрос клиента, а не сбой сервера.
 const CLIENT_PG_ERRORS = new Set([
@@ -32,7 +33,15 @@ function requireString(value, field) {
 
 const orNull = (v) => (v === undefined ? null : v);
 
-function spacesRouter(pool) {
+// Шаблон маршрута для метрик: каждый id иначе давал бы отдельный временной ряд.
+// Считаем из пути: при ошибке Express уже вышел из роутера, и req.route с req.baseUrl неполные.
+function routeLabel(path) {
+  const match = path.match(/^\/api\/(spaces|tasks)(\/[^/]+)?\/?$/);
+  if (!match) return 'unmatched';
+  return `/api/${match[1]}${match[2] ? '/:id' : ''}`;
+}
+
+function spacesRouter(pool, metrics) {
   const r = express.Router();
 
   r.get('/', h(async (req, res) => {
@@ -51,6 +60,7 @@ function spacesRouter(pool) {
       "INSERT INTO spaces (name, color) VALUES ($1, COALESCE($2, '#2F9E6B')) RETURNING id, name, color, created_at",
       [name, orNull(req.body.color)],
     );
+    metrics.spacesCreated.inc();
     res.status(201).json(rows[0]);
   }));
 
@@ -75,7 +85,7 @@ function spacesRouter(pool) {
 
 const TASK_COLUMNS = 'id, space_id, title, description, deadline, priority, status, created_at';
 
-function tasksRouter(pool) {
+function tasksRouter(pool, metrics) {
   const r = express.Router();
 
   r.get('/', h(async (req, res) => {
@@ -101,6 +111,7 @@ function tasksRouter(pool) {
        RETURNING ${TASK_COLUMNS}`,
       [parseId(b.space_id), requireString(b.title, 'title'), orNull(b.description), orNull(b.deadline), orNull(b.priority), orNull(b.status)],
     );
+    metrics.tasksCreated.inc({ priority: rows[0].priority });
     res.status(201).json(rows[0]);
   }));
 
@@ -122,12 +133,14 @@ function tasksRouter(pool) {
       ],
     );
     if (!rows[0]) throw new HttpError(404, 'task not found');
+    if (b.status === 'done') metrics.tasksCompleted.inc();
     res.json(rows[0]);
   }));
 
   r.delete('/:id', h(async (req, res) => {
     const { rowCount } = await pool.query('DELETE FROM tasks WHERE id = $1', [parseId(req.params.id)]);
     if (!rowCount) throw new HttpError(404, 'task not found');
+    metrics.tasksDeleted.inc();
     res.status(204).end();
   }));
 
@@ -139,16 +152,21 @@ function tasksRouter(pool) {
  */
 export function createApp({ pool, state = { shuttingDown: false } }) {
   const app = express();
+  const metrics = createMetrics(pool);
   app.use(express.json());
 
   app.use((req, res, next) => {
-    const started = Date.now();
+    const started = process.hrtime.bigint();
     // Путь фиксируем до роутинга: смонтированный роутер обрезает req.url, и к 'finish' он уже испорчен.
     const path = req.path;
     res.on('finish', () => {
-      if (path === '/livez' || path === '/readyz') return;
+      if (path === '/livez' || path === '/readyz' || path === '/metrics') return;
+      const seconds = Number(process.hrtime.bigint() - started) / 1e9;
+      const route = routeLabel(path);
+      metrics.httpRequests.inc({ method: req.method, route, status: res.statusCode });
+      metrics.httpDuration.observe({ method: req.method, route }, seconds);
       const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
-      log(level, 'request', { method: req.method, path, status: res.statusCode, duration_ms: Date.now() - started });
+      log(level, 'request', { method: req.method, path, status: res.statusCode, duration_ms: Math.round(seconds * 1000) });
     });
     next();
   });
@@ -167,8 +185,13 @@ export function createApp({ pool, state = { shuttingDown: false } }) {
     }
   }));
 
-  app.use('/api/spaces', spacesRouter(pool));
-  app.use('/api/tasks', tasksRouter(pool));
+  // Метрики доступны только внутри кластера: nginx проксирует наружу лишь /api/.
+  app.get('/metrics', h(async (req, res) => {
+    res.set('Content-Type', metrics.registry.contentType).end(await metrics.registry.metrics());
+  }));
+
+  app.use('/api/spaces', spacesRouter(pool, metrics));
+  app.use('/api/tasks', tasksRouter(pool, metrics));
 
   app.use((err, req, res, next) => {
     if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });

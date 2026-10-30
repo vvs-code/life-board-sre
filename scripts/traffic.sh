@@ -21,10 +21,15 @@ while [ "$i" -lt "$ROUNDS" ]; do
   req -o /dev/null "$BASE/api/tasks?space_id=$space"
   req -o /dev/null -X PATCH "$BASE/api/tasks/$task" -d '{"status":"in_progress"}'
   req -o /dev/null -X PATCH "$BASE/api/tasks/$task" -d '{"status":"done"}'
+  extra=$(req -X POST "$BASE/api/tasks" -d "{\"space_id\":$space,\"title\":\"Лишняя $i\",\"priority\":\"low\"}" | id_of)
+  req -o /dev/null -X DELETE "$BASE/api/tasks/$extra"
   # Ошибки клиента: пустое имя, несуществующая таска, неверный приоритет.
   req -o /dev/null -X POST "$BASE/api/spaces" -d '{"name":""}'
   req -o /dev/null "$BASE/api/tasks/999999"
   req -o /dev/null -X POST "$BASE/api/tasks" -d "{\"space_id\":$space,\"title\":\"x\",\"priority\":\"wrong\"}"
-  req -o /dev/null -X DELETE "$BASE/api/spaces/$space"
+  # Каждый пятый раздел оставляем, чтобы в базе копились таски.
+  if [ $((i % 5)) -ne 0 ]; then
+    req -o /dev/null -X DELETE "$BASE/api/spaces/$space"
+  fi
 done
 echo "Готово: $ROUNDS проходов на $BASE"

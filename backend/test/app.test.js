@@ -133,3 +133,56 @@ describe('errors', () => {
     assert.equal(res.status, 400);
   });
 });
+
+describe('metrics', () => {
+  const scrape = async () => (await req('/metrics')).text();
+
+  it('отдаёт метрики рантайма в формате Prometheus', async () => {
+    const res = await req('/metrics');
+    assert.equal(res.status, 200);
+    assert.match(await res.text(), /nodejs_eventloop_lag_seconds/);
+  });
+
+  it('считает созданные таски по приоритету', async () => {
+    pool.respond = async () => ({ rows: [{ id: 1, priority: 'high' }], rowCount: 1 });
+    await req('/api/tasks', { method: 'POST', body: JSON.stringify({ space_id: 1, title: 'x', priority: 'high' }) });
+    assert.match(await scrape(), /lifeboard_tasks_created_total\{priority="high"\} 1/);
+  });
+
+  it('считает завершённые таски только при переходе в done', async () => {
+    const before = Number((await scrape()).match(/lifeboard_tasks_completed_total (\d+)/)[1]);
+    pool.respond = async () => ({ rows: [{ id: 1 }], rowCount: 1 });
+    await req('/api/tasks/1', { method: 'PATCH', body: JSON.stringify({ status: 'in_progress' }) });
+    await req('/api/tasks/1', { method: 'PATCH', body: JSON.stringify({ status: 'done' }) });
+    const after = Number((await scrape()).match(/lifeboard_tasks_completed_total (\d+)/)[1]);
+    assert.equal(after, before + 1);
+  });
+
+  it('в метке route шаблон маршрута, а не конкретный id', async () => {
+    await req('/api/tasks/42');
+    const text = await scrape();
+    assert.match(text, /route="\/api\/tasks\/:id",status="404"/);
+    assert.doesNotMatch(text, /route="\/api\/tasks\/42"/);
+  });
+
+  it('метка route полная и для запросов с ошибкой', async () => {
+    await req('/api/spaces', { method: 'POST', body: JSON.stringify({ name: '' }) });
+    assert.match(await scrape(), /method="POST",route="\/api\/spaces",status="400"/);
+  });
+
+  it('неизвестные пути не плодят временные ряды', async () => {
+    await req('/wp-admin/login.php');
+    const text = await scrape();
+    assert.match(text, /route="unmatched",status="404"/);
+    assert.doesNotMatch(text, /wp-admin/);
+  });
+
+  it('gauge показывает таски из базы и не ломает сбор, когда база недоступна', async () => {
+    pool.respond = async () => ({ rows: [{ status: 'todo', count: 3 }], rowCount: 1 });
+    assert.match(await scrape(), /lifeboard_tasks\{status="todo"\} 3/);
+    pool.respond = async () => { throw new Error('db down'); };
+    const res = await req('/metrics');
+    assert.equal(res.status, 200);
+    assert.doesNotMatch(await res.text(), /lifeboard_tasks\{status=/);
+  });
+});
