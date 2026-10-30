@@ -25,7 +25,7 @@ spec:
       terminationGracePeriodSeconds: 20
       containers:
         - name: backend
-          image: lifeboard-backend:0.2.0
+          image: lifeboard-backend:0.3.0
           imagePullPolicy: Never
           ports:
             - name: http

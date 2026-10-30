@@ -17,10 +17,12 @@ spec:
           command: ["sh", "-c", "until pg_isready -h postgres -p 5432; do echo waiting for postgres; sleep 2; done"]
       containers:
         - name: migrate
-          image: lifeboard-backend:0.2.0
+          image: lifeboard-backend:0.3.0
           imagePullPolicy: Never
           command: ["node", "src/migrate.js"]
           env:
+            - name: SERVICE_NAME
+              value: migrate
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef: { name: lifeboard-db, key: DATABASE_URL }

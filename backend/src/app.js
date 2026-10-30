@@ -147,7 +147,8 @@ export function createApp({ pool, state = { shuttingDown: false } }) {
     const path = req.path;
     res.on('finish', () => {
       if (path === '/livez' || path === '/readyz') return;
-      log('info', 'request', { method: req.method, path, status: res.statusCode, ms: Date.now() - started });
+      const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
+      log(level, 'request', { method: req.method, path, status: res.statusCode, duration_ms: Date.now() - started });
     });
     next();
   });

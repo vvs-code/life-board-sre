@@ -1,0 +1,124 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vector
+---
+# kubernetes_logs обогащает записи метаданными пода, поэтому агенту нужно читать поды, ноды и namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vector
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "namespaces", "nodes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: vector
+subjects:
+  - kind: ServiceAccount
+    name: vector
+    namespace: monitoring
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vector
+data:
+  vector.yaml: |
+    data_dir: /var/lib/vector
+    sources:
+      app:
+        type: kubernetes_logs
+        # Читаем только namespace приложения.
+        extra_namespace_label_selector: kubernetes.io/metadata.name=lifeboard
+    transforms:
+      parse:
+        type: remap
+        inputs: [app]
+        source: |
+          # Приложение пишет JSON: разворачиваем его в поля записи.
+          # Текстовые строки, например от Postgres, остаются как есть.
+          parsed, err = parse_json(.message)
+          if err == null && is_object(parsed) {
+            . = merge!(., object!(parsed))
+          }
+          if !exists(."service.name") {
+            ."service.name" = .kubernetes.pod_labels.app
+          }
+          if !exists(.level) {
+            .level = "unknown"
+          }
+          .pod = .kubernetes.pod_name
+          .namespace = .kubernetes.pod_namespace
+          del(.kubernetes)
+          del(.file)
+          del(.source_type)
+    sinks:
+      victoria_logs:
+        type: elasticsearch
+        inputs: [parse]
+        endpoints:
+          - http://victoria-logs.monitoring.svc.cluster.local:9428/insert/elasticsearch/
+        api_version: v8
+        compression: gzip
+        healthcheck:
+          enabled: false
+        query:
+          _msg_field: message
+          _time_field: timestamp
+          _stream_fields: namespace,service.name
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: vector
+  labels: { app: vector }
+spec:
+  selector:
+    matchLabels: { app: vector }
+  template:
+    metadata:
+      labels: { app: vector }
+    spec:
+      serviceAccountName: vector
+      containers:
+        - name: vector
+          image: timberio/vector:0.61.0-alpine
+          imagePullPolicy: IfNotPresent
+          args: ["--config", "/etc/vector/vector.yaml"]
+          env:
+            - name: VECTOR_SELF_NODE_NAME
+              valueFrom:
+                fieldRef: { fieldPath: spec.nodeName }
+          volumeMounts:
+            - name: config
+              mountPath: /etc/vector
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/vector
+            # /var/log/pods содержит симлинки на файлы Docker, поэтому нужны оба каталога.
+            - name: var-log
+              mountPath: /var/log
+              readOnly: true
+            - name: docker-containers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { memory: 256Mi }
+      volumes:
+        - name: config
+          configMap: { name: vector }
+        - name: data
+          hostPath: { path: /var/lib/vector, type: DirectoryOrCreate }
+        - name: var-log
+          hostPath: { path: /var/log }
+        - name: docker-containers
+          hostPath: { path: /var/lib/docker/containers }

@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: victoria-logs
+  labels: { app: victoria-logs }
+spec:
+  selector: { app: victoria-logs }
+  ports:
+    - name: http
+      port: 9428
+      targetPort: http
+---
+# Single-node: один под и один том. Логи хранятся 7 дней.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: victoria-logs
+  labels: { app: victoria-logs }
+spec:
+  serviceName: victoria-logs
+  replicas: 1
+  selector:
+    matchLabels: { app: victoria-logs }
+  template:
+    metadata:
+      labels: { app: victoria-logs }
+    spec:
+      containers:
+        - name: victoria-logs
+          image: victoriametrics/victoria-logs:v1.53.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - -storageDataPath=/storage
+            - -retentionPeriod=7d
+            - -httpListenAddr=:9428
+          ports:
+            - name: http
+              containerPort: 9428
+          volumeMounts:
+            - name: storage
+              mountPath: /storage
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 512Mi }
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

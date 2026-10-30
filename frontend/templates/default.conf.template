@@ -1,6 +1,24 @@
 # Фактор III: адрес бэкенда подставляется из окружения (BACKEND_URL) при старте контейнера.
+# Фактор XI: access-лог в JSON с теми же полями, что у бэкенда. Пробы kubelet не логируем.
+map $http_user_agent $loggable {
+  ~^kube-probe 0;
+  default 1;
+}
+
+map $status $log_level {
+  ~^5 error;
+  ~^4 warn;
+  default info;
+}
+
+log_format json_access escape=json
+  '{"timestamp":"$time_iso8601","level":"$log_level","message":"request",'
+  '"service.name":"frontend","method":"$request_method","path":"$uri",'
+  '"status":$status,"duration_s":$request_time}';
+
 server {
   listen ${PORT};
+  access_log /dev/stdout json_access if=$loggable;
 
   location /api/ {
     proxy_pass ${BACKEND_URL};
