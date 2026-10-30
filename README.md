@@ -8,6 +8,7 @@
 | 2 | Основы Kubernetes | [docs/hw-2/Отчет.md](docs/hw-2/Отчет.md) |
 | 3 | Логирование | [docs/hw-3/Отчет.md](docs/hw-3/Отчет.md) |
 | 4 | Метрики | [docs/hw-4/Отчет.md](docs/hw-4/Отчет.md) |
+| 5 | SLA | [docs/hw-5/Отчет.md](docs/hw-5/Отчет.md) |
 
 Описание продукта: [docs/PRODUCT.md](docs/PRODUCT.md). Целевая архитектура: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -48,6 +49,19 @@ kubectl -n monitoring port-forward svc/vm-single-victoria-metrics-single-server 
 ```
 
 Интерфейс Victoria Metrics откроется на http://localhost:8428/vmui/, цели сбора на http://localhost:8428/targets.
+
+## SLA
+
+Пробер запускается вместе с приложением (`k8s/prober.yaml`). Для демонстрации есть управляемые сбои:
+
+```bash
+./scripts/fault.sh errors   # 30% запросов к API отвечают 500
+./scripts/fault.sh slow     # каждый запрос медленнее на 600 мс
+./scripts/fault.sh db       # падение базы
+./scripts/fault.sh off      # всё вернуть
+```
+
+Формулы SLI и SLO описаны в [docs/hw-5/Отчет.md](docs/hw-5/Отчет.md).
 
 ## Тесты
 

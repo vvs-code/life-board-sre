@@ -1,0 +1,41 @@
+# Blackbox-мониторинг: прогоняет пользовательский сценарий через frontend, как браузер.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prober
+  labels: { app: prober }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: prober }
+  template:
+    metadata:
+      labels: { app: prober }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+        prometheus.io/path: /metrics
+    spec:
+      containers:
+        - name: prober
+          image: lifeboard-backend:0.5.0
+          imagePullPolicy: Never
+          command: ["node", "src/prober.js"]
+          ports:
+            - name: metrics
+              containerPort: 9100
+          env:
+            - name: SERVICE_NAME
+              value: prober
+            - name: PORT
+              value: "9100"
+            - name: PROBE_TARGET
+              value: http://frontend
+            - name: PROBE_INTERVAL_MS
+              value: "15000"
+          livenessProbe:
+            httpGet: { path: /metrics, port: metrics }
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 10m, memory: 48Mi }
+            limits: { memory: 128Mi }

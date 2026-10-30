@@ -18,7 +18,7 @@ class HttpError extends Error {
   }
 }
 
-const h = (fn) => (req, res, next) => fn(req, res).catch(next);
+const h = (fn) => (req, res, next) => fn(req, res, next).catch(next);
 
 function parseId(raw) {
   const id = Number(raw);
@@ -148,9 +148,9 @@ function tasksRouter(pool, metrics) {
 }
 
 /**
- * @param {{ pool: { query: Function }, state?: { shuttingDown: boolean } }} deps
+ * @param {{ pool: { query: Function }, state?: { shuttingDown: boolean }, fault?: { errorRate?: number, delayMs?: number } }} deps
  */
-export function createApp({ pool, state = { shuttingDown: false } }) {
+export function createApp({ pool, state = { shuttingDown: false }, fault = {} }) {
   const app = express();
   const metrics = createMetrics(pool);
   app.use(express.json());
@@ -188,6 +188,13 @@ export function createApp({ pool, state = { shuttingDown: false } }) {
   // Метрики доступны только внутри кластера: nginx проксирует наружу лишь /api/.
   app.get('/metrics', h(async (req, res) => {
     res.set('Content-Type', metrics.registry.contentType).end(await metrics.registry.metrics());
+  }));
+
+  // Управляемый сбой для демонстрации SLO: задержка и доля ответов 500. По умолчанию выключен.
+  app.use('/api', h(async (req, res, next) => {
+    if (fault.delayMs) await new Promise((resolve) => setTimeout(resolve, fault.delayMs));
+    if (fault.errorRate && Math.random() < fault.errorRate) throw new HttpError(500, 'injected fault');
+    next();
   }));
 
   app.use('/api/spaces', spacesRouter(pool, metrics));

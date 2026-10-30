@@ -186,3 +186,33 @@ describe('metrics', () => {
     assert.doesNotMatch(await res.text(), /lifeboard_tasks\{status=/);
   });
 });
+
+describe('fault injection', () => {
+  const run = async (fault, path) => {
+    const instance = createApp({ pool, state, fault }).listen(0);
+    await new Promise((resolve) => instance.once('listening', resolve));
+    try {
+      const started = Date.now();
+      const res = await fetch(`http://127.0.0.1:${instance.address().port}${path}`);
+      return { status: res.status, ms: Date.now() - started };
+    } finally {
+      instance.close();
+    }
+  };
+
+  it('по умолчанию выключен', async () => {
+    assert.equal((await run({}, '/api/spaces')).status, 200);
+  });
+
+  it('errorRate=1 отвечает 500 на запросы к API', async () => {
+    assert.equal((await run({ errorRate: 1 }, '/api/spaces')).status, 500);
+  });
+
+  it('не трогает пробы: иначе Kubernetes перезапускал бы поды', async () => {
+    assert.equal((await run({ errorRate: 1 }, '/livez')).status, 200);
+  });
+
+  it('delayMs замедляет ответ', async () => {
+    assert.ok((await run({ delayMs: 60 }, '/api/spaces')).ms >= 55);
+  });
+});

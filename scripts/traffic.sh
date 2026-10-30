@@ -1,9 +1,10 @@
 #!/usr/bin/env sh
 # Генератор трафика: обычный CRUD и немного ошибочных запросов.
-# Использование: ./scripts/traffic.sh [адрес] [число проходов]
+# Использование: ./scripts/traffic.sh [адрес] [число проходов] [пауза в секундах]
 set -u
 BASE=${1:-http://localhost:18080}
 ROUNDS=${2:-20}
+PAUSE=${3:-0}
 
 req() {
   curl -s --noproxy '*' -m 5 -H 'Content-Type: application/json' "$@"
@@ -31,5 +32,6 @@ while [ "$i" -lt "$ROUNDS" ]; do
   if [ $((i % 5)) -ne 0 ]; then
     req -o /dev/null -X DELETE "$BASE/api/spaces/$space"
   fi
+  sleep "$PAUSE"
 done
 echo "Готово: $ROUNDS проходов на $BASE"

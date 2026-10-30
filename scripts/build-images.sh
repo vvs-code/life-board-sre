@@ -15,6 +15,6 @@ done
 # 2. Переключаем docker CLI на демон внутри minikube и собираем образы прямо там.
 #    После этого кластер видит их без реестра (imagePullPolicy: Never в манифестах).
 eval "$(minikube docker-env)"
-docker build -t lifeboard-backend:0.4.0 backend
-docker build -t lifeboard-frontend:0.4.0 frontend
+docker build -t lifeboard-backend:0.5.0 backend
+docker build -t lifeboard-frontend:0.5.0 frontend
 docker images | grep lifeboard

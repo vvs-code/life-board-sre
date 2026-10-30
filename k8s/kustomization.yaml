@@ -8,3 +8,4 @@ resources:
   - migrate-job.yaml
   - backend.yaml
   - frontend.yaml
+  - prober.yaml
