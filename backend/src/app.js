@@ -148,7 +148,7 @@ function tasksRouter(pool, metrics) {
 }
 
 /**
- * @param {{ pool: { query: Function }, state?: { shuttingDown: boolean }, fault?: { errorRate?: number, delayMs?: number } }} deps
+ * @param {{ pool: { query: Function }, state?: { shuttingDown: boolean }, fault?: { errorRate?: number, delayMs?: number, blockMs?: number } }} deps
  */
 export function createApp({ pool, state = { shuttingDown: false }, fault = {} }) {
   const app = express();
@@ -190,9 +190,14 @@ export function createApp({ pool, state = { shuttingDown: false }, fault = {} })
     res.set('Content-Type', metrics.registry.contentType).end(await metrics.registry.metrics());
   }));
 
-  // Управляемый сбой для демонстрации SLO: задержка и доля ответов 500. По умолчанию выключен.
+  // Управляемый сбой для демонстрации SLO и алертов: задержка, блокировка event loop и доля ответов 500. По умолчанию выключен.
   app.use('/api', h(async (req, res, next) => {
     if (fault.delayMs) await new Promise((resolve) => setTimeout(resolve, fault.delayMs));
+    if (fault.blockMs) {
+      // Синхронная работа занимает event loop: так растёт nodejs_eventloop_lag.
+      const until = Date.now() + fault.blockMs;
+      while (Date.now() < until);
+    }
     if (fault.errorRate && Math.random() < fault.errorRate) throw new HttpError(500, 'injected fault');
     next();
   }));

@@ -215,4 +215,8 @@ describe('fault injection', () => {
   it('delayMs замедляет ответ', async () => {
     assert.ok((await run({ delayMs: 60 }, '/api/spaces')).ms >= 55);
   });
+
+  it('blockMs занимает event loop на время запроса', async () => {
+    assert.ok((await run({ blockMs: 60 }, '/api/spaces')).ms >= 55);
+  });
 });

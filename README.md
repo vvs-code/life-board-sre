@@ -9,6 +9,7 @@
 | 3 | Логирование | [docs/hw-3/Отчет.md](docs/hw-3/Отчет.md) |
 | 4 | Метрики | [docs/hw-4/Отчет.md](docs/hw-4/Отчет.md) |
 | 5 | SLA | [docs/hw-5/Отчет.md](docs/hw-5/Отчет.md) |
+| 6 | Алерты | [docs/hw-6/Отчет.md](docs/hw-6/Отчет.md) |
 
 Описание продукта: [docs/PRODUCT.md](docs/PRODUCT.md). Целевая архитектура: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -57,11 +58,22 @@ kubectl -n monitoring port-forward svc/vm-single-victoria-metrics-single-server 
 ```bash
 ./scripts/fault.sh errors   # 30% запросов к API отвечают 500
 ./scripts/fault.sh slow     # каждый запрос медленнее на 600 мс
+./scripts/fault.sh block    # каждый запрос на 150 мс занимает event loop
 ./scripts/fault.sh db       # падение базы
 ./scripts/fault.sh off      # всё вернуть
 ```
 
 Формулы SLI и SLO описаны в [docs/hw-5/Отчет.md](docs/hw-5/Отчет.md).
+
+## Алерты
+
+```bash
+kubectl apply -k k8s/alerting/
+helm upgrade --install vm-alert vm/victoria-metrics-alert --version 0.52.0 -n monitoring -f k8s/alerting/values.yaml
+kubectl -n monitoring port-forward svc/mailpit 8025:8025
+```
+
+Правила и настройки Alertmanager лежат в `k8s/alerting/values.yaml`. Письма приходят в Mailpit: http://localhost:8025.
 
 ## Тесты
 

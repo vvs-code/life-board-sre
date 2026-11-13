@@ -1,0 +1,94 @@
+# Значения чарта vm/victoria-metrics-alert: vmalert и Alertmanager.
+# Установка: helm upgrade --install vm-alert vm/victoria-metrics-alert --version 0.52.0 -n monitoring -f k8s/alerting/values.yaml
+server:
+  datasource:
+    url: http://vm-single-victoria-metrics-single-server:8428
+  # Состояние алертов пишется обратно в Victoria Metrics как ряды ALERTS: оно переживает рестарт vmalert и видно в Grafana.
+  remoteWrite:
+    url: http://vm-single-victoria-metrics-single-server:8428
+  remoteRead:
+    url: http://vm-single-victoria-metrics-single-server:8428
+  extraArgs:
+    evaluationInterval: 15s
+  resources:
+    requests: { cpu: 20m, memory: 64Mi }
+    limits: { memory: 256Mi }
+  config:
+    alerts:
+      groups:
+        - name: lifeboard-service
+          rules:
+            - alert: LifeboardHighErrorRate
+              expr: sum(rate(http_requests_total{status=~"5.."}[2m])) / sum(rate(http_requests_total[2m])) > 0.05
+              for: 1m
+              labels:
+                severity: critical
+              annotations:
+                summary: Много ошибок 5xx в API
+                description: "За 2 минуты {{ $value | humanizePercentage }} запросов закончились ошибкой 5xx. Порог 5%."
+            - alert: LifeboardSlowResponses
+              expr: histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[2m]))) > 0.25
+              for: 2m
+              labels:
+                severity: warning
+              annotations:
+                summary: API отвечает медленно
+                description: "p95 времени ответа {{ $value | humanizeDuration }}. Цель SLO 250 мс."
+            - alert: LifeboardProbeFailing
+              expr: sum(sum_over_time(lifeboard_probe_success[2m])) / sum(count_over_time(lifeboard_probe_success[2m])) < 0.5
+              for: 1m
+              labels:
+                severity: critical
+              annotations:
+                summary: Пробер не может создать таску
+                description: "За 2 минуты успешна только {{ $value | humanizePercentage }} проб. Пользовательский сценарий не работает."
+        - name: lifeboard-runtime
+          rules:
+            - alert: NodeEventLoopLagHigh
+              expr: max by (pod) (nodejs_eventloop_lag_p99_seconds{app="backend"}) > 0.1
+              for: 1m
+              labels:
+                severity: warning
+              annotations:
+                summary: "Event loop занят на поде {{ $labels.pod }}"
+                description: "p99 задержки event loop {{ $value | humanizeDuration }}. Порог 100 мс."
+            - alert: NodeMemoryNearLimit
+              expr: max by (pod) (process_resident_memory_bytes{app="backend"}) > 0.8 * 256 * 1024 * 1024
+              for: 5m
+              labels:
+                severity: warning
+              annotations:
+                summary: "Память пода {{ $labels.pod }} близка к лимиту"
+                description: "RSS {{ $value | humanize1024 }}B при лимите контейнера 256 МиБ."
+
+alertmanager:
+  enabled: true
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { memory: 128Mi }
+  config:
+    global:
+      resolve_timeout: 5m
+      # Учебный стенд: письма уходят в Mailpit внутри кластера, наружу ничего не отправляется.
+      smtp_smarthost: mailpit.monitoring.svc:1025
+      smtp_from: alertmanager@lifeboard.local
+      smtp_require_tls: false
+    route:
+      receiver: email
+      group_by: [alertname]
+      group_wait: 15s
+      group_interval: 1m
+      repeat_interval: 4h
+      routes:
+        - matchers: ['severity="critical"']
+          receiver: email
+          repeat_interval: 1h
+    # Пока сервис лежит целиком, предупреждения о скорости и памяти только шумят.
+    inhibit_rules:
+      - source_matchers: ['alertname="LifeboardProbeFailing"']
+        target_matchers: ['severity="warning"']
+    receivers:
+      - name: email
+        email_configs:
+          - to: oncall@lifeboard.local
+            send_resolved: true

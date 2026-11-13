@@ -4,7 +4,11 @@ import { pool } from './db.js';
 import { log } from './log.js';
 
 const state = { shuttingDown: false };
-const fault = { errorRate: Number(process.env.FAULT_ERROR_RATE ?? 0), delayMs: Number(process.env.FAULT_DELAY_MS ?? 0) };
+const fault = {
+  errorRate: Number(process.env.FAULT_ERROR_RATE ?? 0),
+  delayMs: Number(process.env.FAULT_DELAY_MS ?? 0),
+  blockMs: Number(process.env.FAULT_BLOCK_MS ?? 0),
+};
 const app = createApp({ pool, state, fault });
 
 // Фактор VII: сервис сам слушает порт из окружения.
