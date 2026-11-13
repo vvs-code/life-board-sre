@@ -1,0 +1,45 @@
+# Значения чарта grafana-community/grafana.
+# Установка: helm upgrade --install grafana grafana-community/grafana --version 14.4.1 -n monitoring -f k8s/grafana/values.yaml
+persistence:
+  enabled: true
+  size: 1Gi
+# Том ReadWriteOnce и нода на 4 ГБ: две Grafana одновременно не помещаются, поэтому Recreate.
+deploymentStrategy:
+  type: Recreate
+initChownData:
+  enabled: false
+testFramework:
+  enabled: false
+resources:
+  requests: { cpu: 50m, memory: 256Mi }
+  limits: { memory: 1536Mi }
+grafana.ini:
+  # Учебный стенд: смотреть дашборды можно без входа, менять только под admin.
+  auth.anonymous:
+    enabled: true
+    org_role: Viewer
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: VictoriaMetrics
+        uid: victoriametrics
+        type: prometheus
+        access: proxy
+        url: http://vm-single-victoria-metrics-single-server:8428
+        isDefault: true
+        jsonData:
+          timeInterval: 15s
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: lifeboard
+        folder: Life Board
+        type: file
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards/lifeboard
+# Дашборд приложения лежит в git и попадает в Grafana из ConfigMap.
+dashboardsConfigMaps:
+  lifeboard: grafana-dashboard-lifeboard

@@ -8,7 +8,8 @@ cd "$(dirname "$0")/.."
 for image in node:22-alpine nginx:1.27-alpine postgres:16-alpine \
   victoriametrics/victoria-logs:v1.53.0 timberio/vector:0.61.0-alpine \
   victoriametrics/victoria-metrics:v1.155.0 prometheuscommunity/postgres-exporter:v0.20.1 \
-  victoriametrics/vmalert:v1.155.0 prom/alertmanager:v0.34.1 axllent/mailpit:v1.29; do
+  victoriametrics/vmalert:v1.155.0 prom/alertmanager:v0.34.1 axllent/mailpit:v1.29 \
+  grafana/grafana:13.3.1-distroless; do
   docker pull -q "$image"
   minikube image load "$image"
 done

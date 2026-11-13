@@ -15,7 +15,7 @@ minikube start \
   --container-runtime=docker \
   --base-image=kicbase/stable:v0.0.51 \
   --cpus=4 \
-  --memory=4096 \
+  --memory=6144 \
   --docker-opt dns=8.8.8.8 \
   --docker-opt dns=1.1.1.1
 

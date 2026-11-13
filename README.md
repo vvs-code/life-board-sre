@@ -10,6 +10,7 @@
 | 4 | Метрики | [docs/hw-4/Отчет.md](docs/hw-4/Отчет.md) |
 | 5 | SLA | [docs/hw-5/Отчет.md](docs/hw-5/Отчет.md) |
 | 6 | Алерты | [docs/hw-6/Отчет.md](docs/hw-6/Отчет.md) |
+| 7 | Grafana | [docs/hw-7/Отчет.md](docs/hw-7/Отчет.md) |
 
 Описание продукта: [docs/PRODUCT.md](docs/PRODUCT.md). Целевая архитектура: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -74,6 +75,21 @@ kubectl -n monitoring port-forward svc/mailpit 8025:8025
 ```
 
 Правила и настройки Alertmanager лежат в `k8s/alerting/values.yaml`. Письма приходят в Mailpit: http://localhost:8025.
+
+## Grafana
+
+```bash
+helm repo add grafana-community https://grafana-community.github.io/helm-charts
+kubectl apply -k k8s/grafana/
+helm upgrade --install grafana grafana-community/grafana --version 14.4.1 -n monitoring -f k8s/grafana/values.yaml
+kubectl -n monitoring port-forward svc/grafana 3000:80
+```
+
+Дашборд приложения: http://localhost:3000/d/lifeboard. Пароль пользователя admin:
+
+```bash
+kubectl -n monitoring get secret grafana -o jsonpath='{.data.admin-password}' | base64 -d
+```
 
 ## Тесты
 
